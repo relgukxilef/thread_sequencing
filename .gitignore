@@ -1,0 +1,10 @@
+*.*
+!*.*/
+
+!.gitignore
+!.gitsubmodules
+
+!*.txt
+
+!*.cpp
+!*.h
