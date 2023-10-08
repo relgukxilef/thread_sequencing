@@ -1,20 +1,14 @@
+#include <thread>
+
 #include "sequence/sequence.h"
+#include "sequence/thread.h"
+
+using thread = sequence::thread;
 
 void test() {
-    sequence::global_sequence->synchronize(); // 1
-
-    int new_id = sequence::global_sequence->before_thread_start(); // 2
-
-    std::thread t(
-        [](int id){
-            sequence::global_sequence->thread_begin(id); // 2
-
-            sequence::global_sequence->thread_end(); // 3
-        }, new_id
+    thread t(
+        [](){}
     );
-    sequence::global_sequence->thread_start(); // 2
-
-    sequence::global_sequence->join(); // 3
 
     t.join();
 }

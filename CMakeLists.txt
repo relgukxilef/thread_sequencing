@@ -9,6 +9,7 @@ add_executable(
     tests main.cpp
     include/sequence/sequence.h
     source/sequence.cpp
+    include/sequence/thread.h
 )
 
 target_include_directories(tests PUBLIC include)
