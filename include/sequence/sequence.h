@@ -16,6 +16,7 @@ extern struct sequence {
     std::mutex lock;
     std::condition_variable condition;
     std::vector<unsigned char> path, count, waiting, running, free, position;
+    std::string log;
     unsigned depth = 0;
     unsigned thread_count = 0;
 
@@ -26,11 +27,21 @@ extern struct sequence {
         position = {0};
     }
 
+    void add_depth() {
+        depth++;
+        if (depth <= count.size()) {
+            assert(running.size() == count[depth - 1]);
+        } else {
+            count.push_back(running.size());
+            path.push_back(0);
+        }
+        condition.notify_all();
+    }
+
     unsigned before_thread_start() {
         // run before starting a new thread
         // returns the id of the new thread?
         std::unique_lock l(lock);
-        printf("before_thread_start\n");
         unsigned new_id;
         if (free.empty()) {
             new_id = thread_count++;
@@ -42,14 +53,7 @@ extern struct sequence {
         }
         running.push_back(new_id);
 
-        depth++;
-        if (depth <= count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
-        }
-        condition.notify_all();
+        add_depth();
 
         return new_id;
     }
@@ -61,7 +65,6 @@ extern struct sequence {
         // ids are added to path
         // only the current thread can advance path
         std::unique_lock l(lock);
-        printf("thread_begin\n");
         id = new_id;
         condition.wait(l, [&](){
             return position[id] == path[depth - 1];
@@ -71,41 +74,24 @@ extern struct sequence {
         // run after a thread started a new thread
         // may run simultaneously with thread_begin
         std::unique_lock l(lock);
-        printf("thread_start\n");
         condition.wait(l, [&](){
             return position[id] == path[depth - 1];
         });
     }
     void thread_end() {
         std::unique_lock l(lock);
-        printf("thread_end\n");
         running[position[id]] = running.back();
         position[running.back()] = position[id];
         running.pop_back();
         position[id] = ~0;
         free.push_back(id);
 
-        depth++;
-        if (depth <= count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
-        }
-        condition.notify_all();
+        add_depth();
     }
     void synchronize() {
         // run after a globally visible operation like access to shared variables
         std::unique_lock l(lock);
-        printf("synchronize\n");
-        depth++;
-        if (depth <= count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
-        }
-        condition.notify_all();
+        add_depth();
         condition.wait(l, [&](){
             return position[id] == path[depth - 1];
         });
@@ -113,21 +99,13 @@ extern struct sequence {
     void join() {
         // schedule other threads until there is only this one left
         std::unique_lock l(lock);
-        printf("join\n");
         running[position[id]] = running.back();
         position[running.back()] = position[id];
         running.pop_back();
         position[id] = ~0;
         waiting.push_back(id);
 
-        depth++;
-        if (depth <= count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
-        }
-        condition.notify_all();
+        add_depth();
         condition.wait(l, [&](){
             return running.empty();
         });
@@ -143,21 +121,13 @@ extern struct sequence {
         // thread mustn't block any other way as otherwise
         // unblocking would be unpredictable
         std::unique_lock l(lock);
-        printf("wait\n");
         running[position[id]] = running.back();
         position[running.back()] = position[id];
         running.pop_back();
         position[id] = ~0;
         waiting.push_back(id);
 
-        depth++;
-        if (depth <= count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
-        }
-        condition.notify_all();
+        add_depth();
         condition.wait(l, [&](){
             return position[id] == path[depth - 1];
         });
@@ -165,7 +135,6 @@ extern struct sequence {
     void notify() {
         // run to unblock waiting threads
         std::unique_lock l(lock);
-        printf("notify\n");
 
         for (auto t : waiting) {
             position[t] = running.size();
@@ -173,21 +142,14 @@ extern struct sequence {
         }
         waiting.clear();
 
-        depth++;
-        if (depth < count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
-        }
-        condition.notify_all();
+        add_depth();
         condition.wait(l, [&](){
             return position[id] == path[depth - 1];
         });
     }
 
     bool next_sequence() {
-        printf("next_sequence\n");
+        log.clear();
         assert(id == 0);
         depth = 0;
         while (!path.empty() && ++path.back() >= count.back()) {
