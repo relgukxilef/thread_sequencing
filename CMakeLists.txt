@@ -6,15 +6,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(
-    thread_sequencing main.cpp
+    tests main.cpp
     include/sequence/sequence.h
     source/sequence.cpp
 )
 
-target_include_directories(thread_sequencing PUBLIC include)
+target_include_directories(tests PUBLIC include)
 
-include(GNUInstallDirs)
-install(TARGETS thread_sequencing
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+enable_testing()
+add_test(NAME tests COMMAND tests)
