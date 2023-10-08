@@ -10,6 +10,7 @@ add_executable(
     include/sequence/sequence.h
     source/sequence.cpp
     include/sequence/thread.h
+    include/sequence/atomic.h
 )
 
 target_include_directories(tests PUBLIC include)
