@@ -5,7 +5,13 @@ project(thread_sequencing LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(thread_sequencing main.cpp)
+add_executable(
+    thread_sequencing main.cpp
+    include/sequence/sequence.h
+    source/sequence.cpp
+)
+
+target_include_directories(thread_sequencing PUBLIC include)
 
 include(GNUInstallDirs)
 install(TARGETS thread_sequencing
