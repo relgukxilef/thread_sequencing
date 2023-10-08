@@ -1,3 +1,4 @@
+#include <iostream>
 #include <thread>
 #include <atomic>
 
@@ -10,7 +11,7 @@ template<class T>
 using atomic = sequence::atomic<T>;
 
 struct check_exception : std::exception {
-    const char *what() const override {
+    const char *what() const noexcept override {
         return "Assertion failed.";
     }
 };
@@ -24,11 +25,9 @@ void check(bool expression) {
 void test() {
     atomic<int> value(20);
 
-    thread t(
-        [&](){
-            value.store(value.load() + 5);
-        }
-    );
+    thread t([&](){
+        value.store(value.load() + 5);
+    });
 
     value.store(value.load() - 10);
 
@@ -41,19 +40,24 @@ int main() {
     sequence::global_sequence = new sequence::sequence;
 
     int count = 0;
+    int failed = 0;
 
     do {
         try {
             test();
         } catch (check_exception) {
-            fprintf(
-                stderr, "Check failed in sequence:\n%s\n",
-                sequence::global_sequence->log.c_str()
-            );
+            std::cerr
+                << "Check failed in sequence:\n"
+                << sequence::global_sequence->log_buffer.view()
+                << '\n';
+            failed++;
         }
 
         count++;
     } while (sequence::global_sequence->next_sequence());
 
-    printf("Tested %i sequences", count);
+    printf("Tested %i sequences, %i failed\n", count, failed);
+
+    assert(count == 20);
+    assert(failed == 12);
 }

@@ -4,6 +4,8 @@
 #include <condition_variable>
 #include <thread>
 #include <assert.h>
+#include <source_location>
+#include <sstream>
 
 // only allow one thread to run at a time
 // the currently running thread runs until it hits the next sync point
@@ -16,7 +18,7 @@ extern struct sequence {
     std::mutex lock;
     std::condition_variable condition;
     std::vector<unsigned char> path, count, waiting, running, free, position;
-    std::string log;
+    std::stringstream log_buffer;
     unsigned depth = 0;
     unsigned thread_count = 0;
 
@@ -25,6 +27,19 @@ extern struct sequence {
         thread_count = 1;
         running = {0};
         position = {0};
+    }
+
+    void log(
+        const char* message,
+        std::source_location location = std::source_location::current()
+    ) {
+        log_buffer
+            << message
+            << " \t"
+            << location.file_name()
+            << ':'
+            << location.line()
+            << '\n';
     }
 
     void add_depth() {
@@ -149,7 +164,7 @@ extern struct sequence {
     }
 
     bool next_sequence() {
-        log.clear();
+        log_buffer.seekp(0);
         assert(id == 0);
         depth = 0;
         while (!path.empty() && ++path.back() >= count.back()) {

@@ -8,8 +8,11 @@ struct thread {
     thread() = default;
 
     template <class F, class... Args>
-    explicit thread(F&& f, Args&&... args) {
-        global_sequence->log += "thread::thread\n";
+    explicit thread(
+        F&& f, Args&&... args,
+        std::source_location location = std::source_location::current()
+    ) {
+        global_sequence->log("thread::thread", location);
         int new_id = global_sequence->before_thread_start();
 
         t = std::thread(
@@ -26,8 +29,8 @@ struct thread {
         global_sequence->thread_start();
     }
 
-    void join() {
-        global_sequence->log += "thread::join\n";
+    void join(std::source_location location = std::source_location::current()) {
+        global_sequence->log("thread::join", location);
         global_sequence->join();
         t.join();
     }
