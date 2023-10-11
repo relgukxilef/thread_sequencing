@@ -15,7 +15,5 @@ add_executable(
 
 target_include_directories(tests PUBLIC include)
 
-target_compile_features(tests PUBLIC cxx_std_20)
-
 enable_testing()
 add_test(NAME tests COMMAND tests)
