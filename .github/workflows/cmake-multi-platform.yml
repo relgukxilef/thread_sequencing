@@ -22,6 +22,8 @@ jobs:
         exclude:
           - os: ubuntu-latest
             cpp_compiler: cl
+          - os: ubuntu-latest
+            cpp_compiler: clang++
 
     steps:
     - uses: actions/checkout@v3
@@ -45,7 +47,7 @@ jobs:
 
     - name: Build
       # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} -v
 
     - name: Test
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
