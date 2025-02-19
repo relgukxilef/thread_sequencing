@@ -1,5 +1,6 @@
 #pragma once
 #include <thread>
+#include <source_location>
 
 #include "sequence/sequence.h"
 
@@ -13,7 +14,7 @@ struct thread {
         std::source_location location = std::source_location::current()
     ) {
         global_sequence->log("thread::thread", location);
-        int new_id = global_sequence->before_thread_start();
+        new_id = global_sequence->before_thread_start();
 
         t = std::thread(
             [](int id, F&& f, Args&&... args) {
@@ -31,10 +32,11 @@ struct thread {
 
     void join(std::source_location location = std::source_location::current()) {
         global_sequence->log("thread::join", location);
-        global_sequence->join();
+        global_sequence->join(new_id);
         t.join();
     }
 
     std::thread t;
+    std::size_t new_id;
 };
 }

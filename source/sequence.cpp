@@ -2,5 +2,5 @@
 
 namespace sequence {
 sequence *global_sequence;
-thread_local unsigned char sequence::id;
+thread_local std::size_t sequence::id;
 }
