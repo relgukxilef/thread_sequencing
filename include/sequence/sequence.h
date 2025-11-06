@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <span>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -15,20 +16,17 @@ namespace sequence {
 extern struct sequence {
     static thread_local std::size_t id;
 
-    std::mutex lock;
+    std::mutex mutex;
     std::condition_variable condition;
-    std::vector<std::size_t> path, count, waiting, running, free, position;
-    std::vector<bool> finished;
+    std::vector<std::size_t> subtree, count, running, free, positions;
+    std::span<std::size_t> path;
     std::stringstream log_buffer;
-    unsigned depth = 0;
-    unsigned thread_count = 0;
+    std::size_t current_thread = 0;
 
     sequence() {
         id = 0;
-        thread_count = 1;
         running = {0};
-        position = {0};
-        finished = {false};
+        positions = {0};
     }
 
     void log(
@@ -44,138 +42,87 @@ extern struct sequence {
             << '\n';
     }
 
-    void add_depth() {
-        depth++;
-        if (depth <= count.size()) {
-            assert(running.size() == count[depth - 1]);
-        } else {
-            count.push_back(running.size());
-            path.push_back(0);
+    void wait_turn(std::unique_lock<std::mutex>& lock) {
+        while (id != current_thread)
+            condition.wait(lock);
+    }
+
+    void select_next_thread() {
+        std::size_t position = 0;
+        if (!path.empty()) {
+            position = path[0] % running.size();
+            path = path.subspan(1);
         }
+        current_thread = running[position];
+        count.push_back(running.size());
         condition.notify_all();
     }
 
-    void wait_turn(std::unique_lock<std::mutex> &l) {
-        condition.wait(l, [&](){
-            if (running.empty()) {
-                throw std::runtime_error("Deadlock.");
-            }
-            return position[id] != ~0 && position[id] == path[depth - 1];
-        });
-    }
-
-    std::size_t before_thread_start() {
+    std::size_t thread_prepare() {
         // run before starting a new thread
-        // returns the id of the new thread?
-        std::unique_lock l(lock);
-        std::size_t new_id;
-        if (free.empty()) {
-            new_id = thread_count++;
-            position.push_back(running.size());
-            finished.push_back(false);
-        } else {
+        // returns the id of the new thread
+        std::unique_lock<std::mutex> lock(mutex);
+        auto new_id = running.size();
+        if (!free.empty()) {
             new_id = free.back();
             free.pop_back();
-            position[new_id] = running.size();
-            finished[new_id] = false;
+            positions[new_id] = running.size();
+        } else {
+            positions.push_back(running.size());
         }
         running.push_back(new_id);
-
-        add_depth();
-
+        select_next_thread();
         return new_id;
     }
-    void thread_begin(std::size_t new_id) {
+    void thread_child(std::size_t new_id) {
         // run in a thread when it starts
         // may run simultaneously with thread_started
         id = new_id;
-        // synchronize calls can only finish in the order
-        // ids are added to path
-        // only the current thread can advance path
-        std::unique_lock l(lock);
-        id = new_id;
-        wait_turn(l);
+        std::unique_lock<std::mutex> lock(mutex);
+        wait_turn(lock);
     }
-    void thread_start() {
+    void thread_parent() {
         // run after a thread started a new thread
         // may run simultaneously with thread_begin
-        std::unique_lock l(lock);
-        wait_turn(l);
+        std::unique_lock<std::mutex> lock(mutex);
+        wait_turn(lock);
     }
     void thread_end() {
-        std::unique_lock l(lock);
-        running[position[id]] = running.back();
-        position[running.back()] = position[id];
+        std::unique_lock<std::mutex> lock(mutex);
+        auto position = positions[id];
+        free.push_back(id);
+        assert(running[position] == id);
+        running[position] = running.back();
+        positions[running.back()] = position;
         running.pop_back();
-        position[id] = ~0;
-        finished[id] = true;
-
-        for (auto t : waiting) {
-            position[t] = running.size();
-            running.push_back(t);
-        }
-        waiting.clear();
-
-        add_depth();
-    }
-    void join(std::size_t new_id) {
-        // stops scheduling the caller until the thread called thread_end
-        std::unique_lock l(lock);
-
-        while (!finished[new_id])
-            wait(l);
-
-        free.push_back(new_id);
+        select_next_thread();
     }
     void synchronize() {
         // run after a globally visible operation like access to shared variables
-        std::unique_lock l(lock);
-        add_depth();
-        wait_turn(l);
+        std::unique_lock<std::mutex> lock(mutex);
+        select_next_thread();
+        wait_turn(lock);
     }
-    void wait() {
-        std::unique_lock l(lock);
-        wait(l);
-    }
-    void wait(std::unique_lock<std::mutex> &l) {
-        // wait until next notify call, used to implement mutex
-        // thread mustn't block any other way as otherwise
-        // unblocking would be unpredictable
-        running[position[id]] = running.back();
-        position[running.back()] = position[id];
-        running.pop_back();
-        position[id] = ~0;
-        waiting.push_back(id);
-
-        add_depth();
-        wait_turn(l);
-    }
-    void notify() {
-        std::unique_lock l(lock);
-        notify(l);
-    }
-    void notify(std::unique_lock<std::mutex> &l) {
-        // run to unblock waiting threads
-
-        for (auto t : waiting) {
-            position[t] = running.size();
-            running.push_back(t);
-        }
-        waiting.clear();
-
-        add_depth();
-        wait_turn(l);
+    void yield_to(std::size_t other_id) {
+        // block this thread an continue the specified one
+        // useful for blocked mutexes and joins
+        std::unique_lock<std::mutex> lock(mutex);
+        current_thread = other_id;
+        condition.notify_all();
+        wait_turn(lock);
     }
 
     bool next_sequence() {
         log_buffer.seekp(0);
         assert(id == 0);
-        depth = 0;
-        while (!path.empty() && ++path.back() >= count.back()) {
-            path.pop_back();
+        subtree.resize(count.size());
+        while (!subtree.empty() && ++subtree.back() >= count.back()) {
+            subtree.pop_back();
             count.pop_back();
         }
-        return !path.empty();
+        count.clear();
+        path = subtree;
+        return !subtree.empty();
     }
 
 } *global_sequence;

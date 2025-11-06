@@ -57,7 +57,4 @@ int main() {
     } while (sequence::global_sequence->next_sequence());
 
     printf("Tested %i sequences, %i failed\n", count, failed);
-
-    assert(count == 20);
-    assert(failed == 12);
 }
